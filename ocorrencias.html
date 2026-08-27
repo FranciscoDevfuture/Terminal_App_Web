@@ -1571,7 +1571,7 @@ function iniciarOcorrencia(tipo) {
   Estado.relatorioAtual = '';
   Estado.fotos = [];
   if (document.getElementById('fotos-grid')) {
-    document.getElementById('fotos-grid').innerHTML = '<div class="foto-add" data-action="btn-adicionar-foto"><div style="font-size:32px">📷</div><div style="font-size:13px;margin-top:6px;color:var(--text2)">Câmera ou galeria</div></div>';
+    document.getElementById('fotos-grid').innerHTML = '<div class="foto-add" data-dyn="adicionarFoto()"><div style="font-size:32px">📷</div><div style="font-size:13px;margin-top:6px;color:var(--text2)">Câmera ou galeria</div></div>';
   }
   if (cfg.terminal) Estado.dados.terminal = cfg.terminal;
   document.getElementById('chat-messages').innerHTML = '';
