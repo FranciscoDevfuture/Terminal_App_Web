@@ -2332,76 +2332,126 @@ function adicionarFoto() {
   abrirModal('modal-foto-opcao');
 }
 
+let cameraStream = null;
+let cameraFacingMode = 'environment';
+
 async function abrirCamera() {
   fecharModal('modal-foto-opcao');
-
   if (Estado.fotos.length >= 2) {
     alert('Máximo de 2 fotos por ocorrência.');
     return;
   }
 
-  // Aplicativo nativo (Capacitor)
-  if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
-    try {
-      let Camera = window.Capacitor.Plugins && window.Capacitor.Plugins.Camera;
-
-      // Em algumas versões/plugins, Camera pode estar disponível pelo bridge global.
-      if (!Camera && window.Capacitor.Plugins) {
-        Camera = window.Capacitor.Plugins.Camera;
-      }
-
-      if (!Camera || typeof Camera.getPhoto !== 'function') {
-        throw new Error('Plugin de câmera do Capacitor não está disponível.');
-      }
-
-      if (typeof Camera.checkPermissions === 'function') {
-        let perm = await Camera.checkPermissions();
-        if (perm.camera !== 'granted') {
-          perm = await Camera.requestPermissions({ permissions: ['camera'] });
-        }
-        if (perm.camera !== 'granted') {
-          alert('Permissão da câmera não concedida. Autorize o acesso à câmera nas configurações do aplicativo.');
-          return;
-        }
-      }
-
-      const photo = await Camera.getPhoto({
-        quality: 85,
-        resultType: 'dataUrl',
-        source: 'CAMERA',
-        direction: 'REAR',
-        correctOrientation: true,
-        allowEditing: false
-      });
-
-      if (photo && photo.dataUrl) {
-        Estado.fotos.push(photo.dataUrl);
-        renderFotos();
-      } else {
-        alert('A câmera não retornou uma foto.');
-      }
-      return;
-    } catch (e) {
-      console.error('Erro ao abrir câmera nativa:', e);
-      alert('Não foi possível abrir a câmera.\n\n' + (e && e.message ? e.message : 'Verifique a permissão da câmera.'));
-      return;
-    }
-  }
-
-  // Navegador/PWA: usa o input capture para abrir a câmera do aparelho.
-  const input = document.getElementById('foto-input-camera');
-  if (!input) {
-    alert('Campo da câmera não encontrado.');
+  if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+    alert('Este celular/navegador não disponibiliza a câmera direta. Abra o sistema pelo HTTPS ou aplicativo seguro.');
     return;
   }
 
-  // Limpa o valor anterior para permitir tirar outra foto do mesmo arquivo.
-  input.value = '';
+  const modal = document.getElementById('camera-modal');
+  const video = document.getElementById('camera-video');
+  const status = document.getElementById('camera-status');
+  if (!modal || !video) {
+    alert('Tela da câmera não encontrada no aplicativo.');
+    return;
+  }
 
-  // Atributo capture é o caminho mais compatível para abrir a câmera diretamente.
-  input.setAttribute('accept', 'image/*');
-  input.setAttribute('capture', 'environment');
-  input.click();
+  modal.style.display = 'flex';
+  status.textContent = 'Solicitando acesso à câmera...';
+
+  try {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(t => t.stop());
+      cameraStream = null;
+    }
+
+    const constraints = {
+      audio: false,
+      video: {
+        facingMode: { ideal: cameraFacingMode },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
+      }
+    };
+
+    cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+    video.srcObject = cameraStream;
+    video.setAttribute('playsinline', 'true');
+    video.muted = true;
+    await video.play();
+    status.textContent = cameraFacingMode === 'environment' ? 'Câmera traseira ativa' : 'Câmera frontal ativa';
+  } catch (e) {
+    console.error('Erro getUserMedia:', e);
+    fecharCamera();
+    let msg = 'Não foi possível acessar a câmera.';
+    if (e && e.name === 'NotAllowedError') msg = 'Permissão da câmera foi negada. Autorize a câmera nas configurações do navegador/aplicativo.';
+    else if (e && e.name === 'NotFoundError') msg = 'Nenhuma câmera foi encontrada neste aparelho.';
+    else if (e && e.name === 'NotReadableError') msg = 'A câmera está sendo usada por outro aplicativo. Feche-o e tente novamente.';
+    else if (e && e.name === 'SecurityError') msg = 'O navegador bloqueou a câmera por segurança. Abra o aplicativo em HTTPS.';
+    else if (e && e.message) msg += '\n\n' + e.message;
+    alert(msg);
+  }
+}
+
+function capturarFotoCamera() {
+  const video = document.getElementById('camera-video');
+  if (!video || !cameraStream || video.readyState < 2) {
+    alert('A câmera ainda não está pronta. Aguarde um instante.');
+    return;
+  }
+  if (Estado.fotos.length >= 2) {
+    fecharCamera();
+    alert('Máximo de 2 fotos por ocorrência.');
+    return;
+  }
+
+  const canvas = document.createElement('canvas');
+  const maxW = 1600;
+  const scale = Math.min(1, maxW / video.videoWidth);
+  canvas.width = Math.round(video.videoWidth * scale);
+  canvas.height = Math.round(video.videoHeight * scale);
+  const ctx = canvas.getContext('2d', { alpha: false });
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+  if (!dataUrl || dataUrl.length < 100) {
+    alert('Não foi possível capturar a foto.');
+    return;
+  }
+  Estado.fotos.push(dataUrl);
+  renderizarFotos();
+  fecharCamera();
+}
+
+async function trocarCamera() {
+  cameraFacingMode = cameraFacingMode === 'environment' ? 'user' : 'environment';
+  if (!cameraStream) return;
+  const video = document.getElementById('camera-video');
+  const status = document.getElementById('camera-status');
+  try {
+    cameraStream.getTracks().forEach(t => t.stop());
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: { exact: cameraFacingMode }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+    });
+    video.srcObject = cameraStream;
+    await video.play();
+    status.textContent = cameraFacingMode === 'environment' ? 'Câmera traseira ativa' : 'Câmera frontal ativa';
+  } catch (e) {
+    console.warn('Não foi possível trocar exatamente a câmera:', e);
+    cameraFacingMode = cameraFacingMode === 'environment' ? 'user' : 'environment';
+    abrirCamera();
+  }
+}
+
+function fecharCamera() {
+  const modal = document.getElementById('camera-modal');
+  const video = document.getElementById('camera-video');
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(t => t.stop());
+    cameraStream = null;
+  }
+  if (video) video.srcObject = null;
+  if (modal) modal.style.display = 'none';
 }
 
 async function abrirGaleria() {
@@ -2795,6 +2845,17 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 </script>
+<div id="camera-modal" style="display:none;position:fixed;inset:0;z-index:99999;background:#000;flex-direction:column;align-items:center;justify-content:center;">
+  <video id="camera-video" autoplay playsinline muted style="width:100%;height:100%;object-fit:cover;background:#000;"></video>
+  <div style="position:absolute;top:0;left:0;right:0;padding:18px 16px;display:flex;justify-content:center;pointer-events:none;">
+    <div id="camera-status" style="background:rgba(0,0,0,.65);color:#fff;padding:9px 14px;border-radius:20px;font:600 14px Arial,sans-serif;">Iniciando câmera...</div>
+  </div>
+  <div style="position:absolute;bottom:0;left:0;right:0;padding:20px 18px calc(20px + env(safe-area-inset-bottom));background:linear-gradient(transparent,rgba(0,0,0,.85));display:flex;align-items:center;justify-content:space-between;gap:12px;">
+    <button type="button" data-nodebounce="1" onclick="fecharCamera()" style="border:0;border-radius:28px;padding:14px 18px;background:#333;color:#fff;font-weight:700;font-size:15px;">Cancelar</button>
+    <button type="button" data-nodebounce="1" onclick="capturarFotoCamera()" aria-label="Capturar foto" style="width:72px;height:72px;border-radius:50%;border:5px solid #fff;background:#fff;box-shadow:0 2px 12px rgba(0,0,0,.5);font-size:0;"><span style="display:block;width:54px;height:54px;border-radius:50%;background:#111;margin:auto;"></span></button>
+    <button type="button" data-nodebounce="1" onclick="trocarCamera()" style="border:0;border-radius:28px;padding:14px 18px;background:#333;color:#fff;font-weight:700;font-size:15px;">↻ Trocar</button>
+  </div>
+</div>
 <input type="file" id="foto-input-camera" accept="image/*" capture="environment" style="position:fixed;left:-10000px;top:auto;width:1px;height:1px;opacity:0;" onchange="onFotoSelecionada(event)">
 <input type="file" id="foto-input-galeria" accept="image/*" style="position:fixed;left:-10000px;top:auto;width:1px;height:1px;opacity:0;" onchange="onFotoSelecionada(event)">
 
