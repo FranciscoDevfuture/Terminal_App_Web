@@ -1492,7 +1492,7 @@ document.addEventListener('click', function(e) {
   if (fn) {
     try { eval(fn); } catch(err) { console.error('data-dyn err:', err); }
   }
-}, { passive: true });
+});
 
 var _ultimoBtn = 0;
 var _ultimoEnvio = 0;
@@ -2334,27 +2334,74 @@ function adicionarFoto() {
 
 async function abrirCamera() {
   fecharModal('modal-foto-opcao');
-  if (window.Capacitor && window.Capacitor.isNativePlatform() && window.Capacitor.Plugins && window.Capacitor.Plugins.Camera) {
+
+  if (Estado.fotos.length >= 2) {
+    alert('Máximo de 2 fotos por ocorrência.');
+    return;
+  }
+
+  // Aplicativo nativo (Capacitor)
+  if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
     try {
-      const { Camera } = window.Capacitor.Plugins;
+      let Camera = window.Capacitor.Plugins && window.Capacitor.Plugins.Camera;
+
+      // Em algumas versões/plugins, Camera pode estar disponível pelo bridge global.
+      if (!Camera && window.Capacitor.Plugins) {
+        Camera = window.Capacitor.Plugins.Camera;
+      }
+
+      if (!Camera || typeof Camera.getPhoto !== 'function') {
+        throw new Error('Plugin de câmera do Capacitor não está disponível.');
+      }
+
+      if (typeof Camera.checkPermissions === 'function') {
+        let perm = await Camera.checkPermissions();
+        if (perm.camera !== 'granted') {
+          perm = await Camera.requestPermissions({ permissions: ['camera'] });
+        }
+        if (perm.camera !== 'granted') {
+          alert('Permissão da câmera não concedida. Autorize o acesso à câmera nas configurações do aplicativo.');
+          return;
+        }
+      }
+
       const photo = await Camera.getPhoto({
-        quality: 80,
+        quality: 85,
         resultType: 'dataUrl',
         source: 'CAMERA',
         direction: 'REAR',
-        saveToGallery: false,
-        correctOrientation: true
+        correctOrientation: true,
+        allowEditing: false
       });
+
       if (photo && photo.dataUrl) {
         Estado.fotos.push(photo.dataUrl);
-        renderizarFotos();
+        renderFotos();
+      } else {
+        alert('A câmera não retornou uma foto.');
       }
+      return;
     } catch (e) {
-      // usuário cancelou ou negou permissão
+      console.error('Erro ao abrir câmera nativa:', e);
+      alert('Não foi possível abrir a câmera.\n\n' + (e && e.message ? e.message : 'Verifique a permissão da câmera.'));
+      return;
     }
+  }
+
+  // Navegador/PWA: usa o input capture para abrir a câmera do aparelho.
+  const input = document.getElementById('foto-input-camera');
+  if (!input) {
+    alert('Campo da câmera não encontrado.');
     return;
   }
-  document.getElementById('foto-input-camera').click();
+
+  // Limpa o valor anterior para permitir tirar outra foto do mesmo arquivo.
+  input.value = '';
+
+  // Atributo capture é o caminho mais compatível para abrir a câmera diretamente.
+  input.setAttribute('accept', 'image/*');
+  input.setAttribute('capture', 'environment');
+  input.click();
 }
 
 async function abrirGaleria() {
@@ -2748,8 +2795,8 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 </script>
-<input type="file" id="foto-input-camera" accept="image/*" capture="environment" style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;" onchange="onFotoSelecionada(event)">
-<input type="file" id="foto-input-galeria" accept="image/*" style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;" onchange="onFotoSelecionada(event)">
+<input type="file" id="foto-input-camera" accept="image/*" capture="environment" style="position:fixed;left:-10000px;top:auto;width:1px;height:1px;opacity:0;" onchange="onFotoSelecionada(event)">
+<input type="file" id="foto-input-galeria" accept="image/*" style="position:fixed;left:-10000px;top:auto;width:1px;height:1px;opacity:0;" onchange="onFotoSelecionada(event)">
 
 </body>
 </html>
