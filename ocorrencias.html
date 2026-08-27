@@ -1481,11 +1481,10 @@ function podeDisparar() {
   return true;
 }
 
-document.addEventListener('pointerup', function(e) {
+document.addEventListener('click', function(e) {
   var el = e.target.closest('[data-dyn]');
   if (!el) return;
   e.stopPropagation();
-  e.preventDefault();
   var nodebounce = el.getAttribute('data-nodebounce');
   if (!nodebounce && !podeDisparar()) return;
   if (nodebounce) _ultimoEvento = Date.now();
@@ -1493,7 +1492,7 @@ document.addEventListener('pointerup', function(e) {
   if (fn) {
     try { eval(fn); } catch(err) { console.error('data-dyn err:', err); }
   }
-}, { passive: false });
+}, { passive: true });
 
 var _ultimoBtn = 0;
 var _ultimoEnvio = 0;
@@ -2668,12 +2667,11 @@ window.addEventListener('offline', atualizarOnline);
 function bindBtn(dataAction, fn) {
   var el = document.querySelector('[data-action="' + dataAction + '"]');
   if (!el) return;
-  el.addEventListener('pointerup', function(e) {
+  el.addEventListener('click', function(e) {
     e.stopPropagation();
-    e.preventDefault();
     if (!podeDisparar()) return;
     exec(fn);
-  }, { passive: false });
+  }, { passive: true });
 }
 
 function initEventos() {
