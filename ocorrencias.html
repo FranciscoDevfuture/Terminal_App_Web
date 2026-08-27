@@ -990,7 +990,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     <div class="fotos-section">
       <div class="fotos-titulo">📷 Fotos da ocorrência (máx. 2)</div>
       <div class="fotos-grid" id="fotos-grid">
-        <div class="foto-add" data-action="btn-adicionar-foto">
+        <div class="foto-add" data-dyn="adicionarFoto()">
           <div style="font-size:32px">📷</div>
           <div style="font-size:13px;margin-top:6px;color:var(--text2)">Câmera ou galeria</div>
         </div>
@@ -2405,7 +2405,7 @@ function renderizarFotos() {
     const btn = document.createElement('div');
     btn.className = 'foto-add';
     btn.id = 'foto-add-btn';
-    btn.setAttribute('data-action', 'btn-adicionar-foto');
+    btn.setAttribute('data-dyn', 'adicionarFoto()');
     btn.innerHTML = '<div style="font-size:32px">📷</div><div style="font-size:13px;margin-top:6px;color:var(--text2)">Adicionar foto</div>';
     grid.appendChild(btn);
   }
