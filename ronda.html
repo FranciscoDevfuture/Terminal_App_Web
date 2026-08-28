@@ -214,7 +214,22 @@ async function shareViaWhatsApp(){if(!document.querySelector('.ticket-wrap')){al
 async function generatePDF(){if(!document.querySelector('.ticket-wrap')){alert('Nenhum relatório encontrado para gerar PDF.');return}loadingOverlay.classList.add('active');try{const pdfBlob=await buildPdfBlob();loadingOverlay.classList.remove('active');if(!pdfBlob)return;const fileName='Ronda_'+String(state.nome).replace(/[\\/:*?"<>|]/g,'_')+'_'+new Date().toISOString().slice(0,10)+'.pdf';const result=await saveOrSharePdf(pdfBlob,fileName,'📋 Relatório de ronda gerado pelo Assistente.');await addAgentMsgWithTyping(result.native?'✅ PDF gerado! Escolha onde salvar ou enviar na tela que abriu.':'✅ PDF gerado e baixado com sucesso!','Ana',false)}catch(error){console.error(error);loadingOverlay.classList.remove('active');alert('Erro ao gerar o PDF: '+(error&&error.message?error.message:error))}}
 
 async function handleUserInput(raw){
-const txt=(raw||'').trim();if(!txt)return;addUserMsg(txt);quickEl.innerHTML='';
+const txt=(raw||'').trim();if(!txt)return;
+if(txt==='__resume_yes__'||txt==='__resume_no__'){
+addUserMsg(txt==='__resume_yes__'?'✅ Continuar de onde parei':'🔄 Começar nova ronda');
+quickEl.innerHTML='';
+if(txt==='__resume_no__'){localStorage.removeItem(PROGRESS_KEY);startFlow();return}
+input.disabled=false;sendBtn.disabled=false;updateHeader();
+let resumo='Certo, retomando! Você é '+(state.nome||'—')+', RE '+(state.re||'—')+'.';
+if(state.ocorrencias&&state.ocorrencias.length>0)resumo+=' Já foram registrados '+state.ocorrencias.length+' local(is).';
+await addAgentMsgWithTyping(resumo,'Ana',false);
+if(state.step==='LOCAL')await addAgentMsgWithTyping('Pode continuar. Informe o local (ou "Ronda finalizada" para encerrar).','Ana');
+else if(state.step==='OCORRENCIA')await addAgentMsgWithTyping('Pode continuar. O que você observou em '+state.pendingLocal+'?','Ana');
+else if(state.step==='DONE')renderTicket();
+else askStep();
+salvarProgresso();
+return}
+addUserMsg(txt);quickEl.innerHTML='';
 if(state.step==='LOCAL'&&isControleHTs(txt)){state.step='HT_INPUT';askStep();return}
 switch(state.step){
 case'NOME':state.nome=txt;state.step='RE';await addAgentMsgWithTyping(getSaudacao(state.nome,state.turno),'Ana');state.saudacaoFeita=true;await addAgentMsgWithTyping('Agora, qual é o seu RE?','Ana');break;
@@ -235,7 +250,9 @@ case'EDIT_OCORRENCIA_PICK':{if(txt.trim().toLowerCase()==='cancelar'){await reto
 case'EDIT_OCORRENCIA_LOCAL':{const idx=state.editOcorrenciaIndex;if(txt.trim().toLowerCase()!=='manter')state.ocorrencias[idx].local=txt;state.step='EDIT_OCORRENCIA_TEXTO';await addAgentMsgWithTyping('Nova descrição da ocorrência? (atual: '+state.ocorrencias[idx].texto+'). Digite "manter" para não alterar.','Ana');break}
 case'EDIT_OCORRENCIA_TEXTO':{const idx=state.editOcorrenciaIndex;if(txt.trim().toLowerCase()!=='manter')state.ocorrencias[idx].texto=txt;const oc=state.ocorrencias[idx];await retomarAposEdicao('✅ Ocorrência atualizada: '+oc.local+': '+oc.texto);break}
 case'DONE':await addAgentMsgWithTyping('A ronda já foi finalizada. Toque em "Reiniciar" para iniciar um novo registro.','Ana');break;
-}}
+}
+salvarProgresso();
+}
 function funcaoExtenso(){return FUNCOES[state.funcao]?(state.funcao+' – '+FUNCOES[state.funcao]):state.funcao}
 function nowStr(){const d=new Date();return d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}
 function buildReportText(){let lines=['RELATÓRIO DE RONDA','Colaborador: '+state.nome,'RE: '+state.re,'Função: '+funcaoExtenso(),'Turno: '+state.turno,'Encarregado de Plantão: '+state.encarregado,'RE do Encarregado: '+state.encarregadoRe,'Terminal: '+state.terminal,''];if(state.hts.length){lines.push('CONTROLE DE HTs:');state.hts.forEach((ht,i)=>lines.push('  '+(i+1)+'. '+ht));lines.push('')}lines.push('Locais e Ocorrências:');if(!state.ocorrencias.length)lines.push('- Nenhum local registrado.');else state.ocorrencias.forEach(o=>lines.push('- '+o.local+': '+o.texto+(o.foto?' [COM FOTO]':'')));lines.push('','Conclusão: Ronda concluída sem mais alterações.');return lines.join('\n')}
@@ -262,10 +279,24 @@ function escapeHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;
 function scrollDown(){requestAnimationFrame(()=>chatEl.scrollTop=chatEl.scrollHeight)}
 sendBtn.addEventListener('click',()=>{const val=input.value;input.value='';handleUserInput(val)});
 input.addEventListener('keydown',e=>{if(e.key==='Enter'){const val=input.value;input.value='';handleUserInput(val)}});
-resetBtn.addEventListener('click',()=>{if(confirm('Reiniciar o registro de ronda? Os dados atuais serão perdidos.'))startFlow()});
+resetBtn.addEventListener('click',()=>{if(confirm('Reiniciar o registro de ronda? Os dados atuais serão perdidos.')){localStorage.removeItem(PROGRESS_KEY);startFlow()}});
 editBtn.addEventListener('click',enterEditMenu);
 
-function startFlow(){chatEl.innerHTML='';quickEl.innerHTML='';state=freshState();updateHeader();addAgentMsgFast('Olá! 👋 Sou a Ana, sua assistente Virtual de ronda da SPS VIVACIDADE! Vamos iniciar o registro. Por gentileza, Qual é o seu nome?','Ana');input.disabled=false;sendBtn.disabled=false;input.focus()}
+const PROGRESS_KEY='ronda_em_andamento';
+function salvarProgresso(){try{if(state.step==='DONE')localStorage.removeItem(PROGRESS_KEY);else localStorage.setItem(PROGRESS_KEY,JSON.stringify(state))}catch(e){/* localStorage indisponível/cheio - autosave é best-effort */}}
+function carregarProgresso(){try{const raw=localStorage.getItem(PROGRESS_KEY);return raw?JSON.parse(raw):null}catch(e){return null}}
+
+function startFlow(){
+const salvo=carregarProgresso();
+if(salvo&&salvo.step&&salvo.step!=='NOME'){
+chatEl.innerHTML='';quickEl.innerHTML='';
+state=salvo;
+updateHeader();
+addAgentMsgFast('👋 Notei que uma ronda ficou em andamento (a página deve ter recarregado sozinha). Deseja continuar de onde parou?','Ana');
+setQuickReplies([{label:'✅ Continuar de onde parei',value:'__resume_yes__'},{label:'🔄 Começar nova ronda',value:'__resume_no__'}]);
+input.disabled=true;sendBtn.disabled=true;
+return}
+chatEl.innerHTML='';quickEl.innerHTML='';state=freshState();updateHeader();addAgentMsgFast('Olá! 👋 Sou a Ana, sua assistente Virtual de ronda da SPS VIVACIDADE! Vamos iniciar o registro. Por gentileza, Qual é o seu nome?','Ana');input.disabled=false;sendBtn.disabled=false;input.focus()}
 const style=document.createElement('style');style.textContent='@media print{header,#quick,#inputbar,.row,.ticket-actions{display:none!important}body{background:#fff}#chat{overflow:visible}.ticket-wrap{padding:0}.ticket{box-shadow:none}}';document.head.appendChild(style);
 startFlow();
 })();
